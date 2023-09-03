@@ -7,26 +7,16 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/Waelson/internal/resource"
 )
 
 const (
-	urlApiCep = "https://cdn.apicep.com/file/apicep/%s.json"
-	urlViaCep = "http://viacep.com.br/ws/%s/json/"
+	urlApiCep  = "https://cdn.apicep.com/file/apicep/%s.json"
+	urlViaCep  = "http://viacep.com.br/ws/%s/json/"
+	nameApiCep = "API Cep"
+	nameViaCep = "Via Cep"
 )
-
-type Message struct {
-	Url     string `json:"url"`
-	Error   bool   `json:"error"`
-	Content string `json:"content"`
-}
-
-func (m *Message) ToString() string {
-	jsonBytes, err := json.Marshal(m)
-	if err != nil {
-		panic(err)
-	}
-	return string(jsonBytes)
-}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -34,53 +24,124 @@ func main() {
 		return
 	}
 
-	if len(os.Args[1]) != 8 {
+	cep := os.Args[1]
+
+	if len(cep) != 8 {
 		fmt.Println("CEP invalido!")
 		return
 	}
 
-	channelApiCep := make(chan Message)
-	channelViaCep := make(chan Message)
+	channelApiCep := make(chan resource.Message)
+	channelViaCep := make(chan resource.Message)
 
-	go doRequest(urlApiCep, os.Args[1], channelApiCep)
-	go doRequest(urlViaCep, os.Args[1], channelViaCep)
+	go doRequest(urlApiCep, nameApiCep, cep, channelApiCep)
+	go doRequest(urlViaCep, nameViaCep, cep, channelViaCep)
 
 	select {
 	case response := <-channelApiCep:
-		fmt.Println(response.ToString())
+		response.Print()
 	case response := <-channelViaCep:
-		fmt.Println(response.ToString())
+		response.Print()
 	case <-time.After(time.Second):
 		fmt.Println("Timeout")
 	}
 
 }
 
-func doRequest(urlTemplate, cep string, channel chan Message) {
+func doRequest(urlTemplate, nameApi, cep string, channel chan resource.Message) {
 	url := fmt.Sprintf(urlTemplate, cep)
 
 	resp, err := http.Get(url)
 	if err != nil {
-		msg := createMessage(url, true, "Erro ao criar a requisicao")
+		genericError := resource.GenericErrorResponse{
+			Erro:    true,
+			Message: "Ocorreu um erro ao realizar a requisicao",
+		}
+		msg := createMessage(nameApi, url, genericError)
 		channel <- msg
 	}
 
 	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		msg := createMessage(url, true, "Erro ao ler a resposta da requisicao")
-		channel <- msg
-	}
-
-	channel <- createMessage(url, false, string(body))
+	result := processResponse(nameApi, resp)
+	channel <- createMessage(nameApi, url, result)
 }
 
-func createMessage(url string, err bool, content string) Message {
-	msg := Message{
-		Url:     url,
-		Error:   err,
-		Content: content,
+func processResponse(nameApi string, response *http.Response) resource.Printable {
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return resource.GenericErrorResponse{
+			Erro:    true,
+			Message: "Ocorreu um erro ao processar a resposta",
+		}
+	}
+
+	if nameApi == nameApiCep {
+
+		if response.StatusCode == 403 {
+			var result resource.ApiCepHttp403Response
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserealizar a resposta",
+				}
+			}
+			return result
+		} else if response.StatusCode == 429 {
+			var result resource.ApiCepHttp429Response
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserealizar a resposta",
+				}
+			}
+			return result
+		} else {
+			var result resource.GenericErrorResponse
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserializar a resposta",
+				}
+			}
+			return result
+		}
+
+	} else if nameApi == nameViaCep {
+		if response.StatusCode == 200 {
+			var result resource.ViaCepHttp200Response
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserealizar a resposta",
+				}
+			}
+			return result
+		} else {
+			var result resource.GenericErrorResponse
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserializar a resposta",
+				}
+			}
+			return result
+		}
+	} else {
+		panic(fmt.Errorf("nao foi possivel identificar a API de origem da requisicao"))
+	}
+
+}
+
+func createMessage(name, url string, response resource.Printable) resource.Message {
+	msg := resource.Message{
+		ApiName:  name,
+		Url:      url,
+		Response: response,
 	}
 	return msg
 }
