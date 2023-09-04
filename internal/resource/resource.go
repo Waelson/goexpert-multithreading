@@ -14,6 +14,17 @@ type Message struct {
 	Response Printable `json:"response"`
 }
 
+type ApiCepHttp200Response struct {
+	Code       string `json:"code"`
+	State      string `json:"state"`
+	City       string `json:"city"`
+	District   string `json:"district"`
+	Address    string `json:"address"`
+	Status     int    `json:"status"`
+	Ok         bool   `json:"ok"`
+	StatusText string `json:"statusText"`
+}
+
 type ApiCepHttp403Response struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -57,10 +68,17 @@ func (m Message) Print() {
 
 func (p ApiCepHttp403Response) Print() {
 	fmt.Println("A API retornou um erro do tipo HTTP 403")
+	fmt.Println("Code: ", p.Code)
+	fmt.Println("Message: ", p.Message)
+	fmt.Println("Status: ", p.Status)
 }
 
 func (p ApiCepHttp429Response) Print() {
 	fmt.Println("A API retornou um erro do tipo HTTP 429")
+	fmt.Println("OK: ", p.Ok)
+	fmt.Println("Message: ", p.Message)
+	fmt.Println("Status: ", p.Status)
+	fmt.Println("Status Text: ", p.StatusText)
 }
 
 func (p ViaCepHttp200Response) Print() {
@@ -82,4 +100,12 @@ func (p ViaCepHttp200Response) Print() {
 
 func (p GenericErrorResponse) Print() {
 	fmt.Println("A API retornou um erro generico")
+}
+
+func (p ApiCepHttp200Response) Print() {
+	fmt.Println("CEP: ", p.Code)
+	fmt.Println("Endereco: ", p.Address)
+	fmt.Println("Bairro: ", p.District)
+	fmt.Println("Cidade: ", p.City)
+	fmt.Println("Estado: ", p.State)
 }

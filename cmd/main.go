@@ -31,11 +31,14 @@ func main() {
 		return
 	}
 
+	formatedCep, _ := formatCep(cep)
+
 	channelApiCep := make(chan resource.Message)
 	channelViaCep := make(chan resource.Message)
 
-	go doRequest(urlApiCep, nameApiCep, cep, channelApiCep)
-	go doRequest(urlViaCep, nameViaCep, cep, channelViaCep)
+	go doRequest(urlApiCep, nameApiCep, formatedCep, channelApiCep)
+	//go doRequest(urlViaCep, nameViaCep, cep, channelViaCep)
+	go doRequest(urlApiCep, nameApiCep, formatedCep, channelApiCep)
 
 	select {
 	case response := <-channelApiCep:
@@ -46,6 +49,16 @@ func main() {
 		fmt.Println("Timeout")
 	}
 
+}
+
+func formatCep(rawCep string) (string, error) {
+	if len(rawCep) != 8 {
+		return rawCep, fmt.Errorf("formato do CEP e invalido")
+	}
+	firstBlock := rawCep[:5]
+	lastBlock := rawCep[5:]
+	result := fmt.Sprintf("%s-%s", firstBlock, lastBlock)
+	return result, nil
 }
 
 func doRequest(urlTemplate, nameApi, cep string, channel chan resource.Message) {
@@ -77,7 +90,17 @@ func processResponse(nameApi string, response *http.Response) resource.Printable
 
 	if nameApi == nameApiCep {
 
-		if response.StatusCode == 403 {
+		if response.StatusCode == 200 {
+			var result resource.ApiCepHttp200Response
+			err := json.Unmarshal(body, &result)
+			if err != nil {
+				return resource.GenericErrorResponse{
+					Erro:    true,
+					Message: "Ocorreu um erro ao desserealizar a resposta",
+				}
+			}
+			return result
+		} else if response.StatusCode == 403 {
 			var result resource.ApiCepHttp403Response
 			err := json.Unmarshal(body, &result)
 			if err != nil {
